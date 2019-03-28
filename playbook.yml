@@ -1,0 +1,122 @@
+---
+- hosts: all
+  become: true
+  become_method: sudo
+  remote_user: ubuntu
+
+  vars:
+    NODEJS_VERSION: 10
+    PM2_PATH: $PATH:/usr/bin /usr/lib/node_modules/pm2/bin/pm2 startup systemd -u ubuntu --hp /home/ubuntu
+    PROJECT_FOLDER_PATH: /home/ubuntu/neon-ah
+    SITES_AVAILABLE: /etc/nginx/sites-available
+    SITES_ENABLED: /etc/nginx/sites-enabled
+    SITES_AVAILABLE_AH: /etc/nginx/sites-available/ah
+    SITES_ENABLED_AH: /etc/nginx/sites-enabled/ah
+
+  tasks:
+    - name: Update cache
+      apt:
+        update_cache: yes
+
+    - name: Add gpg key for NodeJS LTS
+      apt_key:
+        url: "https://deb.nodesource.com/gpgkey/nodesource.gpg.key"
+        state: present
+
+    - name: Install NodeJS Repo
+      apt_repository:
+        repo: "deb https://deb.nodesource.com/node_{{ NODEJS_VERSION }}.x {{ ansible_distribution_release }} main"
+        state: present
+        update_cache: yes
+
+    - name: Install Node.JS
+      apt:
+        name: nodejs
+        state: present
+
+    - name: Add gpg key for Yarn
+      apt_key:
+        url: "https://dl.yarnpkg.com/debian/pubkey.gpg"
+        state: present 
+
+    - name: Install Yarn Repo
+      apt_repository:
+        repo: "deb https://dl.yarnpkg.com/debian stable main"
+        state: present
+        update_cache: yes
+
+    - name: Install Yarn
+      apt:
+        name: yarn
+        state: present
+
+    - name: Clone Project Repository from GitHub
+      shell: git clone -b dev https://github.com/andela/neon-ah-frontend.git neon-ah
+
+    - name: Install the Project dependencies
+      shell: yarn install
+      args:
+        chdir: "{{ PROJECT_FOLDER_PATH }}"
+
+    - name: Use Webpack to bundle the project for production
+      shell: yarn run heroku-postbuild
+      args:
+        chdir: "{{ PROJECT_FOLDER_PATH }}"
+
+    - name: Install Nginx
+      apt:
+        name: nginx
+        state: latest
+
+    - name: Remove Nginx default config files
+      shell: |
+        cd {{ SITES_AVAILABLE }}
+        rm default
+
+        cd {{ SITES_ENABLED }}
+        rm default
+
+    - name: Configure Nginx for Reverse Proxy
+      shell: echo "server  {
+            listen 80;
+            location / {
+              proxy_pass http://127.0.0.1:3110;
+            }
+          }" >> {{ SITES_AVAILABLE_AH }}
+
+    - name: Symlink sites-available file with sites-enabled
+      shell: |
+        ln -s {{ SITES_AVAILABLE_AH }} {{ SITES_ENABLED_AH }}
+
+    - name: Start Nginx
+      service: 
+        name: nginx
+        state: started
+
+    - name: Install pm2 to run app in the background
+      shell: npm install pm2 -g
+
+    - name: Add pm2 start script
+      shell: |
+        cd /home/ubuntu/neon-ah
+        echo '
+          {
+            "apps": [
+              {
+                "name": "Team Neon Authors Haven",
+                "script": "npm",
+                "args": "run start"
+              }
+            ]
+          }
+        ' > app_start.config.json
+    
+    - name: Start node app with pm2
+      shell: |
+        cd /home/ubuntu/neon-ah
+        sudo pm2 start ./app_start.config.json
+        sleep 30
+        sudo pm2 startup
+        sudo env PATH={{PM2_PATH}}
+        sudo pm2 save
+
