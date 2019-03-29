@@ -1,4 +1,4 @@
-# the data source for the AMI for the instance
+# the data source for the AMI for the instance, filtered to give the ami we provisioned by the name given
 data "aws_ami" "image" {
   owners = ["self"]
 
@@ -18,7 +18,7 @@ data "aws_ami" "image" {
   }
 }
 
-# The AWS instance resource
+# The AWS instance resource for creating the instance
 resource "aws_instance" "neon-ah" {
   ami           = "${data.aws_ami.image.id}"
   instance_type = "${var.INSTANCE_TYPE}"

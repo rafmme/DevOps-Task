@@ -8,4 +8,10 @@ function add_ansible() {
     sudo apt-get install ansible -y
 }
 
-add_ansible
+# main function that serves as the execution starting point
+function main {
+    add_ansible
+}
+
+
+main
